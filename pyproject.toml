@@ -1,0 +1,21 @@
+[project]
+name = "generative-ner"
+version = "0.1.0"
+description = "Generative named entity recognition toolkit with LLM"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "datasets>=3.3.2",
+    "numba>=0.61.0",
+    "peft>=0.14.0",
+    "torch>=2.6.0",
+    "transformers[torch]>=4.49.0",
+    "trl>=0.15.2",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15.0",
+    "pytest>=8.3.4",
+]
