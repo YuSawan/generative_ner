@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=Company_EAE_finetune
+#SBATCH --job-name=LLM_NER_finetune
 #SBATCH -p gpu_long
 #SBATCH -t 12:00:00
 #SBATCH --gres gpu:a6000:1
@@ -14,7 +14,9 @@ test_file=~/data/ner/${dataset}/test.jsonl
 output_dir=save_models/${dataset}/${model_name}
 seed=0
 
-uv run python src/finetune.py \
+
+# uv run torchrun --nproc_per_node 1 src/train.py
+uv run python src/train.py \
     --do_train \
     --do_eval \
     --model_name $model_name \
