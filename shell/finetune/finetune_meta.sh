@@ -4,7 +4,7 @@
 #SBATCH -t 12:00:00
 #SBATCH --gres gpu:a6000:1
 
-# export WANDB_PROJECT=LLM_NER_finetune
+export WANDB_PROJECT=LLM_NER_finetune
 
 model_name="meta-llama/Meta-Llama-3-8B-Instruct"
 dataset='conll2003'
