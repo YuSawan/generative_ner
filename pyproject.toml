@@ -9,6 +9,8 @@ dependencies = [
     "datasets>=3.3.2",
     "numba>=0.61.0",
     "peft>=0.14.0",
+    "protobuf>=6.30.0",
+    "sentencepiece>=0.2.0",
     "torch>=2.6.0",
     "transformers[torch]>=4.49.0",
     "trl>=0.15.2",
@@ -18,4 +20,5 @@ dependencies = [
 dev = [
     "mypy>=1.15.0",
     "pytest>=8.3.4",
+    "wandb==0.19.8",
 ]
