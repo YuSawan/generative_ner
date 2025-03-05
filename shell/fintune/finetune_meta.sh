@@ -1,0 +1,31 @@
+#!/bin/bash
+#SBATCH --job-name=Company_EAE_finetune
+#SBATCH -p gpu_long
+#SBATCH -t 12:00:00
+#SBATCH --gres gpu:a6000:1
+
+# export WANDB_PROJECT=LLM_NER_finetune
+
+model_name="meta-llama/Meta-Llama-3-8B-Instruct"
+dataset='conll2003'
+train_file=~/data/ner/${dataset}/train.jsonl
+val_file=~/data/ner/${dataset}/validation.jsonl
+test_file=~/data/ner/${dataset}/test.jsonl
+output_dir=save_models/${dataset}/${model_name}
+seed=0
+
+uv run python src/finetune.py \
+    --do_train \
+    --do_eval \
+    --model_name $model_name \
+    --train_file $train_file \
+    --validation_file $val_file \
+    --eval_file $eval_file \
+    --output_dir $output_dir \
+    --per_device_train_batch_size 2 \
+    --per_device_eval_batch_size 8 \
+    --run_name ${model_name}_${seed} \
+    --seed $seed
+
+
+
