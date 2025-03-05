@@ -18,7 +18,7 @@ language='en' # en or ja
 seed=0
 
 mkdir -p $output_dir
-uv run torchrun --nproc_per_node 1 src/train.py
+uv run torchrun --nproc_per_node 1 src/train.py \
     --do_train \
     --do_eval \
     --model $model_name \
