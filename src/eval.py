@@ -16,8 +16,8 @@ def evaluate(
     n_correct, n_pred, n_gold = 0, 0, 0
     for document in eval_dataset:
         pbar.update(1)
-        for messages in preprocessor.get_messages(document):
-            model_input = messages[:-1], messages[-1]
+        for messages in preprocessor.get_messages(document['examples']):
+            model_input = messages[:-1]
             gold_output = messages[-1]['content']
             tokenized_chat = preprocessor.tokenizer.apply_chat_template(
                 model_input,
@@ -28,7 +28,7 @@ def evaluate(
             tokenized_chat = tokenized_chat.to(model.device)
             generated_tokens = model.generate(tokenized_chat, max_new_tokens=512)
             generated_text = preprocessor.tokenizer.decode(generated_tokens[0]).replace(preprocessor.tokenizer.eos_token, "\n")
-            generated_text = generated_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
+            generated_text = generated_text.split(preprocessor.response_template)[-1].strip()
             golds = preprocessor.parse_output(gold_output)
             preds = preprocessor.parse_output(generated_text)
             n_gold += len(set(golds))
