@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 import torch
 from datasets import load_dataset
@@ -9,7 +9,6 @@ from peft import LoraConfig, PeftModel, TaskType, get_peft_model
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BatchEncoding,
     HfArgumentParser,
     Trainer,
     TrainingArguments,
@@ -20,7 +19,7 @@ from trl import DataCollatorForCompletionOnlyLM
 
 from eval import evaluate
 from pred import predict
-from preprocessor import Preprocessor
+from preprocessor import Preprocessor, data_preprocess
 from training_utils import setup_logger
 
 logger = logging.get_logger(__name__)
@@ -65,26 +64,11 @@ def finetune(args: Arguments, training_args: TrainingArguments) -> None:
     tokenizer = AutoTokenizer.from_pretrained(args.model, token=True)
     preprocessor = Preprocessor(tokenizer, labels, language=args.language, extend_context=args.extend_context, format=args.format)
 
-    def preprocess(documents: dict[str, Any]) -> dict[str, Any]:
-        features: list[BatchEncoding] = []
-        for document in documents["examples"]:
-            features.extend(preprocessor(document))
-        outputs = {}
-        for k in list(features[0].keys()):
-            outputs[k] = [f[k] for f in features]
-        return outputs
-
-    with training_args.main_process_first(desc="dataset map pre-processing"):
-        column_names = next(iter(raw_datasets.values())).column_names
-        splits = raw_datasets.map(preprocess, batched=True, remove_columns=column_names)
-
-
     tokenizer.pad_token = tokenizer.eos_token
     collator = DataCollatorForCompletionOnlyLM(
         tokenizer = tokenizer,
-        response_template = "<|start_header_id|>assistant<|end_header_id|>"
+        response_template = preprocessor.response_template
     )
-
     model = AutoModelForCausalLM.from_pretrained(
         args.model,
         torch_dtype = torch.bfloat16,
@@ -93,7 +77,15 @@ def finetune(args: Arguments, training_args: TrainingArguments) -> None:
     )
 
     if training_args.do_train:
-        pegt_config = LoraConfig(
+        if training_args:
+            with training_args.main_process_first(desc="dataset map pre-processing"):
+                train_dataset = data_preprocess(preprocessor, raw_datasets['train']) if raw_datasets['train'] else None
+                validation_dataset = data_preprocess(preprocessor, raw_datasets['validation']) if raw_datasets['validation'] else None
+        else:
+            train_dataset = data_preprocess(preprocessor, raw_datasets['train']) if raw_datasets['train'] else None
+            validation_dataset = data_preprocess(preprocessor, raw_datasets['validation']) if raw_datasets['validation'] else None
+
+        peft_config = LoraConfig(
             r=128,
             lora_alpha=128,
             lora_dropout=0.05,
@@ -109,13 +101,13 @@ def finetune(args: Arguments, training_args: TrainingArguments) -> None:
             ]
         )
         model.enable_input_require_grads()
-        model = get_peft_model(model, pegt_config)
+        model = get_peft_model(model, peft_config)
         model.print_trainable_parameters()
 
         trainer = Trainer(
             model,
-            train_dataset=splits['train'],
-            eval_dataset=splits['validation'],
+            train_dataset=train_dataset,
+            eval_dataset=validation_dataset,
             data_collator=collator,
             args = training_args,
             tokenizer = tokenizer

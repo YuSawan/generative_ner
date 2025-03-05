@@ -3,15 +3,13 @@ import re
 import string
 from typing import Iterable, Optional, TypedDict
 
+from datasets import Dataset
 from transformers import BatchEncoding, PreTrainedTokenizer
 
 CHAT_TEMPLATE = """\
 {% set loop_messages = messages %}
 {% for message in loop_messages %}
-{% set content = bos_token + message['role'] + ': ' message['content'] + eos_token %}
-{% if loop.index0 == 0 %}
-{% set content = bos_token + content + eos_token %}
-{% endif %}
+{% set content = bos_token + message['role'] + ': ' + message['content'] + eos_token %}
 {{ content }}
 {% endfor %}
 {% if add_generation_prompt %}
@@ -96,21 +94,26 @@ class Preprocessor:
         self.tokenizer = tokenizer
         if not self.tokenizer.chat_template:
             self.tokenizer.chat_template = CHAT_TEMPLATE
+            self.response_template = self.tokenizer.bos_token + "assistant: "
+        else:
+            ## Instruct-models
+            self.response_template = "<|start_header_id|>assistant<|end_header_id|>"
+
         self.labels = labels
         self.extend_context = extend_context
         self.format = format # 'single' turn or 'multi' turn
         self.language = language
 
     def segment(self, document: list[Example]) -> Iterable[tuple[str, list[tuple[str, str]]]]:
-        text, entities = "", []
+        context, all_entities = "", []
         for example in document:
             entities = [(e['label'], example['text'][e['start']: e['end']]) for e in example['entities']]
             if not self.extend_context:
                 yield example['text'], entities
-            text += example['text']
-            entities.extend(entities)
+            context += example['text']
+            all_entities.extend(entities)
         if self.extend_context:
-            yield text, entities
+            yield context, all_entities
 
     def get_messages(self, document: list[Example]) -> Iterable[list[dict[str, str]]]:
         for text, entities in self.segment(document):
@@ -118,13 +121,12 @@ class Preprocessor:
                 messages = self.get_single_prompt(text, entities, self.language)
                 yield messages
             else:
-                for label in self.labels:
-                    messages = self.get_multi_prompt(text, label, entities, self.language)
-                    yield messages
+                messages = self.get_multi_prompt(text, self.labels, entities, self.language)
+                yield messages
 
     @staticmethod
     def get_single_prompt(text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
-        output = "[" + '; '.join([f'{label}: {text}' for text, label in entities]) + "]"
+        output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
         if language == 'ja':
             messages = [
                 {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
@@ -144,29 +146,31 @@ class Preprocessor:
         return messages
 
     @staticmethod
-    def get_multi_prompt(text: str, target_label: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
-        entity_texts = []
-        for text, label in entities:
-            if label == target_label:
-                entity_texts.append(f'"{text}"')
-        output = "[" + ', '.join(entity_texts) + "]"
-
+    def get_multi_prompt(text: str, labels: list[str], entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
         if language == 'ja':
             messages = [
-                {"role": "システム", "content": "バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。"},
-                {"role": "ユーザ", "content": f"テキスト: {text}"},
-                {"role": "アシスタント", "content": 'テキストを読み終えました。'},
-                {"role": "ユーザ", "content": f"テキストには何の{label}が述べられているでしょうか？"},
-                {"role": "アシスタント", "content": output},
+                {"role": "system", "content": "バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。"},
+                {"role": "user", "content": f"テキスト: {text}"},
+                {"role": "assistant", "content": 'テキストを読み終えました。'},
             ]
         else:
             messages = [
                 {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
                 {"role": "user", "content": f"Text: {text}"},
                 {"role": "assistant", "content": 'I’ve read this text.'},
-                {"role": "user", "content": f"What describes {label} in the text?"},
-                {"role": "assistant", "content": output},
             ]
+
+        for label in labels:
+            entity_texts = []
+            for enlabel, entext in entities:
+                if enlabel == label:
+                    entity_texts.append(f'"{entext}"')
+            output = "[" + ', '.join(entity_texts) + "]"
+            messages.extend([
+                {"role": "user", "content": f"What describes {label} in the text?" if language != 'ja' else f"テキストには何の{label}が述べられているでしょうか？"},
+                {"role": "assistant", "content": output},
+            ])
+
         return messages
 
     def parse_output(self, output: str) -> list[str]:
@@ -184,10 +188,9 @@ class Preprocessor:
         return entities
 
 
-    def __call__(self, document: list[Example]) -> Iterable[BatchEncoding]:
+    def __call__(self, document: list[Example]) -> Iterable[str]:
         for messages in self.get_messages(document):
             yield self.tokenizer.apply_chat_template(messages)
-
 
 
 class T5Preprocessor(Preprocessor):
@@ -210,7 +213,7 @@ class T5Preprocessor(Preprocessor):
 
     @staticmethod
     def get_single_prompt(text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
-        output = "[" + '; '.join([f'{label}: {text}' for text, label in entities]) + "]"
+        output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
         messages = [
             {"role": "user", "content": f'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2": {text}'},
             {"role": "assistant", "content": output},
@@ -218,14 +221,21 @@ class T5Preprocessor(Preprocessor):
         return messages
 
     @staticmethod
-    def get_multi_prompt(text: str, target_label: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
+    def get_multi_prompt(text: str, labels: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
         entity_texts = []
-        for text, label in entities:
+        for label, entext in entities:
             if label == target_label:
-                entity_texts.append(f'"{text}"')
+                entity_texts.append(f'"{entext}"')
         output = "[" + ', '.join(entity_texts) + "]"
         messages = [
             {"role": "user", "content": f'What describes {label} in the text?: {text}'},
             {"role": "assistant", "content": output},
         ]
         return messages
+
+
+def data_preprocess(preprocessor: Preprocessor, dataset: Dataset) -> list[str]:
+    tokenized_dataset: list[str] = []
+    for data in dataset:
+        tokenized_dataset.extend(preprocessor(data['examples']))
+    return tokenized_dataset
