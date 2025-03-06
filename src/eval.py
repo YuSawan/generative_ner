@@ -19,14 +19,10 @@ def evaluate(
         for messages in preprocessor.get_messages(document['examples']):
             model_input = messages[:-1]
             gold_output = messages[-1]['content']
-            tokenized_chat = preprocessor.tokenizer.apply_chat_template(
-                model_input,
-                tokenize = True,
-                add_generation_prompt=True,
-                return_tensors="pt",
-            )
+            prompt = preprocessor.tokenizer.apply_chat_template(model_input, tokenize = False, add_generation_prompt=True)
+            tokenized_chat = preprocessor.tokenizer(prompt, return_tensors='pt', padding=True)
             tokenized_chat = tokenized_chat.to(model.device)
-            generated_tokens = model.generate(tokenized_chat, max_new_tokens=512)
+            generated_tokens = model.generate(**tokenized_chat, max_new_tokens=512, pad_token_id=preprocessor.tokenizer.eos_token_id)
             generated_text = preprocessor.tokenizer.decode(generated_tokens[0]).replace(preprocessor.tokenizer.eos_token, "\n")
             generated_text = generated_text.split(preprocessor.response_template)[-1].strip()
             golds = preprocessor.parse_output(gold_output)
