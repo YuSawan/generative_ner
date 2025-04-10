@@ -125,7 +125,7 @@ class Preprocessor:
                 yield messages
 
     @staticmethod
-    def get_single_prompt(text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
+    def get_inclusive_prompt(text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
         output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
         if language == 'ja':
             messages = [
@@ -141,6 +141,27 @@ class Preprocessor:
                 {"role": "user", "content": f"Text: {text}"},
                 {"role": "assistant", "content": 'I’ve read this text.'},
                 {"role": "user", "content": 'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2".'},
+                {"role": "assistant", "content": output},
+            ]
+        return messages
+
+    @staticmethod
+    def get_single_prompt(text: str, labels: list[str], entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
+        output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
+        if language == 'ja':
+            messages = [
+                {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
+                {"role": "user", "content": f'テキスト: {text}'},
+                {"role": "assistant", "content": 'テキストを読み終えました。'},
+                {"role": "user", "content": f'テキストから、{[label for label in labels]}に関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
+                {"role": "assistant", "content": output},
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
+                {"role": "user", "content": f"Text: {text}"},
+                {"role": "assistant", "content": 'I’ve read this text.'},
+                {"role": "user", "content": f'Please find all the entity words associated with [{[label for label in labels]}] in the given text. Output format is "type1: word1; type2: word2".'},
                 {"role": "assistant", "content": output},
             ]
         return messages
