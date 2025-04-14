@@ -121,7 +121,7 @@ def finetune(args: Arguments, training_args: TrainingArguments) -> None:
             trainer.save_state()
             trainer.save_metrics("train", result.metrics)
     else:
-        model = PeftModel.from_pretrained(model, args.output_dir)
+        model = PeftModel.from_pretrained(model, training_args.output_dir)
 
 
     if training_args.do_eval:
