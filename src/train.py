@@ -121,8 +121,7 @@ def finetune(args: Arguments, training_args: TrainingArguments) -> None:
             trainer.save_state()
             trainer.save_metrics("train", result.metrics)
     else:
-        assert args.checkpoint_path
-        model = PeftModel.from_pretrained(model, args.checkpoint_path)
+        model = PeftModel.from_pretrained(model, args.output_dir)
 
 
     if training_args.do_eval:
