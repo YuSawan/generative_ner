@@ -8,6 +8,7 @@ requires-python = ">=3.12"
 dependencies = [
     "datasets>=3.3.2",
     "numba>=0.61.0",
+    "openai>=1.82.0",
     "peft>=0.14.0",
     "protobuf>=5.29.3",
     "sentencepiece>=0.2.0",
