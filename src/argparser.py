@@ -19,7 +19,8 @@ class DatasetArguments:
     validation_file: Optional[str] = None
     test_file: Optional[str] = None
     language: str = 'en' # "en" or "ja"
-    format: str = 'single' # "single" or "multi"
+    format: str = 'collective' # "collective", "individual" or "universal"
+    labels2names: Optional[dict[str, str]] = None
 
 
 @dataclass
@@ -39,6 +40,7 @@ class GptModelArguments:
     top_p: float
     temperature: float
     seed: int
+    k: int
     n: int
     max_token_length: int
     mode: str # "generate", "estimate", "debug", or "batch"
