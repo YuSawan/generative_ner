@@ -31,21 +31,6 @@ class Example(TypedDict):
     word_positions: Optional[list[tuple[int, int]]]
 
 
-
-def _format(s: str) -> str:
-    ## Instruct UIE
-    s = ' '.join(s.split())
-    s = re.sub(r"\s*(,|:|\(|\)|\.|_|;|'|-)\s*", r'\1', s)
-    s = s.lower()
-    s = s.replace('{','').replace('}','')
-    s = re.sub(',+', ',', s)
-    s = re.sub('\.+', '.', s)
-    s = re.sub(';+', ';', s)
-    s = s.replace('’', "'")
-    s = s.replace('location', 'located')
-    return s
-
-
 def normalize_answer(s: str) -> str:
     ## Universal NER
     """Lower text and remove punctuation, articles and extra whitespace."""
@@ -54,7 +39,7 @@ def normalize_answer(s: str) -> str:
     def white_space_fix(text: str) -> str:
         return ' '.join(text.split())
     def remove_punc(text: str) -> str:
-        exclude = set(string.punctuation)
+        exclude = set(string.punctuation) - set([":"])
         return ''.join(ch for ch in text if ch not in exclude)
     def lower(text: str) -> str:
         return text.lower()
@@ -86,7 +71,7 @@ class Preprocessor:
     def __init__(
             self,
             tokenizer: PreTrainedTokenizer,
-            labels: list[str],
+            labels2names: dict[str, str],
             language: str='en',
             format: str = 'single' # 'single' or 'multi'
         ) -> None:
@@ -98,31 +83,33 @@ class Preprocessor:
             ## Instruct-models
             self.response_template = "<|start_header_id|>assistant<|end_header_id|>"
 
-        self.labels = labels
-        self.format = format # 'single' turn, 'multi', 'inclusive' turn
+        self.labels2names = labels2names
+        self.format = format # 'collective', 'individual', or 'universal'
         self.language = language
 
-    def segment(self, document: list[Example]) -> Iterator[tuple[str, list[tuple[str, str]]]]:
+    @staticmethod
+    def segment(document: list[Example]) -> Iterator[tuple[str, list[tuple[str, str]]]]:
         for example in document:
             entities = [(e['label'], example['text'][e['start']: e['end']]) for e in example['entities']]
             yield example['text'], entities
 
     def get_messages(self, document: list[Example]) -> Iterator[list[dict[str, str]]]:
         for text, entities in self.segment(document):
-            if self.format == 'single':
-                messages = self.get_single_prompt(text, entities, self.language)
+            if self.format == 'collective':
+                messages = self.get_collective_prompt(text, entities, self.labels2names, self.language)
                 yield messages
-            elif self.format == 'inclusive':
-                messages = self.get_inclusive_prompt(text, entities, self.language)
+            elif self.format == 'universal':
+                messages = self.get_universal_prompt(text, entities, self.labels2names, self.language)
                 yield messages
+            elif self.format == 'individual':
+                for message in self.get_individual_prompt(text, entities, self.labels2names, self.language):
+                    yield message
             else:
                 raise NotImplementedError(f"Format '{self.format}' is not implemented.")
-                # messages = self.get_multi_prompt(text, self.labels, entities, self.language)
-                # yield messages
 
     @staticmethod
-    def get_inclusive_prompt(text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
+    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
+        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
         if language == 'ja':
             messages = [
                 {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
@@ -141,14 +128,15 @@ class Preprocessor:
             ]
         return messages
 
-    def get_single_prompt(self, text: str, entities: list[tuple[str, str]], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{label}: {entext}' for label, entext in entities]) if entities else " None"
+    @staticmethod
+    def get_collective_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
+        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
         if language == 'ja':
             messages = [
                 {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
                 {"role": "user", "content": f'テキスト: {text}'},
                 {"role": "assistant", "content": 'テキストを読み終えました。'},
-                {"role": "user", "content": f'テキストから、{[label for label in self.labels]}に関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
+                {"role": "user", "content": f'テキストから{'、'.join([label for label in labels2names.values()])}に関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
                 {"role": "assistant", "content": output},
             ]
         else:
@@ -156,12 +144,13 @@ class Preprocessor:
                 {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
                 {"role": "user", "content": f"Text: {text}"},
                 {"role": "assistant", "content": 'I’ve read this text.'},
-                {"role": "user", "content": f'Please find all the entity words associated with [{[label for label in self.labels]}] in the given text. Output format is "type1: word1; type2: word2".'},
+                {"role": "user", "content": f'Please find all the entity words associated with {len(labels2names)} entity types in the given text: {', '.join([label for label in labels2names.values()])}. Output format is "type1: word1; type2: word2".'},
                 {"role": "assistant", "content": output},
             ]
         return messages
 
-    def get_multi_prompt(self, text: str, entities: list[tuple[str, str]], language: str) -> Iterator[list[dict[str, str]]]:
+    @staticmethod
+    def get_individual_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> Iterator[list[dict[str, str]]]:
         if language == 'ja':
             messages = [
                 {"role": "system", "content": "バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。"},
@@ -175,28 +164,32 @@ class Preprocessor:
                 {"role": "assistant", "content": 'I’ve read this text.'},
             ]
 
-        for label in self.labels:
+        for label, name in labels2names.items():
             entity_texts = []
             entity_texts = [f'"{entext}"' for enlabel, entext in entities if enlabel == label]
             output = "[" + ', '.join(entity_texts) + "]"
             additional_content = [
-                {"role": "user", "content": f"What describes {label} in the text?" if language != 'ja' else f"テキストには何の{label}が述べられているでしょうか？"},
+                {"role": "user", "content": f"What describes {name} in the text?" if language != 'ja' else f"テキストには何の{name}が述べられているでしょうか？"},
                 {"role": "assistant", "content": output},
             ]
             yield messages + additional_content
 
-    def parse_output(self, output: str) -> list[str]:
+    @staticmethod
+    def parse_output(output: str, format: str) -> list[str]:
         entities = []
-        if self.format == 'single':
-            for segment in output.split(";"):
-                entities.append(_format(segment))
-        else:
+        if format == 'individual':
             for entity in single_parser(output):
                 if isinstance(entity, tuple):
                     for e in entity:
                         entities.append(e)
                 else:
                     entities.append(entity)
+        elif format in ['collective', 'universal']:
+            for segment in output.split(";"):
+                entities.append(normalize_answer(segment))
+        else:
+            raise NotImplementedError(f"Format '{format}' is not implemented.")
+
         return entities
 
 
