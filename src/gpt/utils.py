@@ -1,7 +1,6 @@
 import hashlib
 import json
 import os
-from pathlib import Path
 from typing import Any
 
 import httpx
@@ -9,7 +8,7 @@ import httpx
 DEFAULT_TIMEOUT = httpx.Timeout(150.0, read=150.0, write=50.0, connect=6.0)
 
 
-def dump_jsonline(data: list[dict[str, Any]] | bytes, save_dir: str, file_output_name: str, ensure_ascii: bool = True) -> None:
+def dump_jsonline(data: list[dict[str, Any]] | bytes, filename: str | os.PathLike, ensure_ascii: bool = True) -> None:
     """dump_jsonline
 
     This function is to save data to a file formatting as jsonline.
@@ -21,15 +20,15 @@ def dump_jsonline(data: list[dict[str, Any]] | bytes, save_dir: str, file_output
         ensure_ascii (bool): False If you use unicode strings such as Japanese
     """
     if isinstance(data, bytes):
-        with open(Path(save_dir, file_output_name), 'wb') as file:
+        with open(filename, 'wb') as file:
             file.write(data)
     else:
-        with open(Path(save_dir, file_output_name), 'w') as file:
+        with open(filename, 'w') as file:
             for obj in data:
                 file.write(json.dumps(obj, ensure_ascii=ensure_ascii) + '\n')
 
 
-def load_jsonline(saved_dir: str, file_input_name: str) -> list[dict[str, Any]]:
+def load_jsonline(filename: str | os.PathLike) -> list[dict[str, Any]]:
     """load_json
 
     This function is to simply load a jsonline.
@@ -42,7 +41,7 @@ def load_jsonline(saved_dir: str, file_input_name: str) -> list[dict[str, Any]]:
         data (list[dict[str, Any]]): loaded data
     """
     batch = []
-    with open(Path(saved_dir, file_input_name), 'r') as file:
+    with open(filename, 'r') as file:
         for line in file:
             # line = line.strip().encode('latin1').decode('utf-8')
             json_object = json.loads(line.strip())

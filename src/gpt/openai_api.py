@@ -1,3 +1,4 @@
+import glob
 import json
 import logging
 import os
@@ -344,7 +345,7 @@ class OpenAI_APIWrapper:
         total_cost = count_fee(total_tokens, model_name, use_batchapi=True)
         return total_cost
 
-    def save_batch(self, save_dir: str, file_name: str = 'batch_input.jsonl', ensure_ascii: bool = True) -> None:
+    def save_batch(self, save_dir: str, file_basename: str = 'batch_input', batch_size: int = 50000, ensure_ascii: bool = True) -> None:
         """save_batch
 
         This function is to save a batch to a file formatting as jsonline.
@@ -358,7 +359,8 @@ class OpenAI_APIWrapper:
         os.makedirs(save_dir, exist_ok=True)
         if not self.batch:
             raise RuntimeError("There is no task in self.batch")
-        dump_jsonline(self.batch, save_dir, file_name, ensure_ascii)
+        for i, k in enumerate(range(0, len(self.batch), batch_size)):
+            dump_jsonline(self.batch[k: k+batch_size], Path(save_dir, f"{file_basename}_{i}.jsonl"), ensure_ascii)
 
 
 class BatchAPI_Wrapper:
@@ -373,57 +375,40 @@ class BatchAPI_Wrapper:
             self,
             api_file: str,
             saved_dir: str,
-            file_input_name: str = 'batch_input.jsonl',
+            file_input_basename: str = "batch_input",
+            file_output_basename: str = "batch_output"
     ) -> None:
         """__init__
 
         Args:
             api_file (str): Path to file of OpenAI api token. I assume that the api_token of OpenAI is formatting as json.
             saved_dir (str): Path to directory of saved by OpenAI_APIWrapper
-            file_input_name (str): Path to saved jsonline file by OpenAI_APIWrapper.
+            file_input_basename (str): Path to saved jsonline file by OpenAI_APIWrapper. (Default: batch_input)
         """
         self.client: OpenAI = call_openai_client(api_file)
-        # self.batch_file: FileObject = self.load_batch_input(saved_dir, file_input_name)
         self.saved_dir: str = saved_dir
-        self.file_input_name = file_input_name
+        self.file_input_basename = file_input_basename
+        self.file_output_basename = file_output_basename
 
-    def load_batch_input(self) -> list[dict[str, Any]]:
-        """load_batch_input_raw
+    def _upload_batch(self, submit_file: str | os.PathLike) ->  FileObject:
+        """_upload_batch
 
-        This function is to simply load a jsonline file consisting a batch.
-
-        Args:
-            saved_dir (str): Path to the directory for save batch
-            file_name (str): File name of the batch (Default: batch_input.jsonl)
-
-        Return:
-            batch_file (FileObject): loaded batch file
-        """
-        return load_jsonline(self.saved_dir, self.file_input_name)
-
-    def upload_batch(self, saved_dir: Optional[str] = None, file_input_name: Optional[str] = None) -> FileObject:
-        """load_batch
-
-        This function is to load a jsonline file consisting a batch.
+        This function is to uoload a jsonline file consisting a batch.
 
         Args:
-            saved_dir (str): Path to the directory for save batch
-            file_name (str): File name of the batch (Default: batch_input.jsonl)
+            submit_file (str | os.PathLike): Path to the submit file
 
         Return:
-            batch_file (FileObject): loaded batch file
+            batch_file (FileObject): uploaded batch file
         """
-
-        saved_dir = self.saved_dir if not saved_dir else saved_dir
-        file_input_name = self.file_input_name if not file_input_name else file_input_name
 
         batch_file = self.client.files.create(
-            file=open(Path(saved_dir, file_input_name), "rb"),
+            file=open(Path(submit_file), "rb"),
             purpose="batch"
         )
         return batch_file
 
-    def submit_batch(self, saved_dir: Optional[str] = None, description: str = "nightly eval job") -> str:
+    def submit_batch(self, description: str = "nightly eval job") -> None:
         """submit_batch
 
         This function is to submit a batch file to BatchAPI
@@ -436,20 +421,33 @@ class BatchAPI_Wrapper:
             batch_file (Batch): loaded batch file
         """
 
-        saved_dir = self.saved_dir if not saved_dir else saved_dir
-        batch_file = self.upload_batch(saved_dir=saved_dir)
-        batch_job = self.client.batches.create(
-            input_file_id=batch_file.id,
-            endpoint="/v1/chat/completions",
-            completion_window="24h",
-            metadata={
-                "description": description
-            }
-        )
-        with open(os.path.join(saved_dir, 'batch_id.json'), 'w') as f:
-            json.dump({"batch_file_id": batch_job.id}, f)
-        logger.info(f"Submit Job to API. Job ID: {batch_job.id}")
-        return batch_job.id
+        files = glob.glob(f"{self.saved_dir}/{self.file_input_basename}_*.jsonl")
+        if not files:
+            raise FileNotFoundError
+
+        batch_jobs_info = []
+        for fname in files:
+            batch_file = self._upload_batch(fname)
+            batch_job = self.client.batches.create(
+                input_file_id=batch_file.id,
+                endpoint="/v1/chat/completions",
+                completion_window="24h",
+                metadata={
+                    "description": description
+                }
+            )
+            input_file_name = self.client.files.retrieve(batch_job.input_file_id).filename
+            batch_jobs_info.append({"batch_job_id": batch_job.id, "input_file_name": input_file_name})
+            logger.info(f"Submit Job to API. Job ID: {batch_job.id}")
+
+        dump_jsonline(batch_jobs_info, Path(self.saved_dir, 'batch_id_list.jsonl'))
+
+    def get_batch_id(self) -> list[dict[str, str]]:
+        batch_list_path = Path(self.saved_dir, 'batch_id_list.jsonl')
+        if not Path.exists(batch_list_path):
+            raise FileNotFoundError
+
+        return [json.loads(line) for line in open(batch_list_path)]
 
     def check_job_status(self, batch_job_id: str) -> Literal['validating', 'failed', 'in_progress', 'finalizing', 'completed', 'expired', 'cancelling', 'cancelled']:
         """check_job_status
@@ -462,7 +460,7 @@ class BatchAPI_Wrapper:
         batch_job = self.client.batches.retrieve(batch_job_id)
         return batch_job.status
 
-    def retrieve_job(self, batch_job_id: str) -> bytes:
+    def retrieve_job(self, batch_job_id: str) -> list[dict[str, Any]]:
         """retrieve_job
 
         This function is to retrieve a result of BatchAPI.
@@ -471,56 +469,32 @@ class BatchAPI_Wrapper:
             batch_job_id (str): job_id(batch_job.id) of batch job to retrieve
 
         Returns:
-            return (bytes): retrieved results of BatchAPI from job_id
+            return (_legacy_response.HttpxBinaryResponseContent): retrieved results of BatchAPI from job_id
         """
         batch_job = self.client.batches.retrieve(batch_job_id)
         result_file_id = batch_job.output_file_id
         if result_file_id:
-            result = self.client.files.content(result_file_id).content
+            result = self.client.files.content(result_file_id)
         else:
             raise RuntimeError("batch_job.output_file_id is not found. Please check whether the batch process is truly finished.")
-        return result
 
-    def dump_batch_job(self, batch_job_id: str, save_dir: Optional[str] = None, file_output_name: str = "batch_job_results.jsonl") -> None:
-        """dump_job
-
-        This function is to retrieve a result of BatchAPI.
-
-        Args:
-            batch_job_id (str): job_id(batch_job.id) of batch job to retrieve
-            save_dir (str): path to directory for saving
-            file_output_name (str): saved file name
-        """
-        if not save_dir:
-            save_dir = self.saved_dir
-        result =  self.retrieve_job(batch_job_id)
-        dump_jsonline(result, save_dir, file_output_name)
-
-    def load_batch_job(self, save_dir: Optional[str] = None, file_output_name: str = "batch_job_results.jsonl") -> list[dict[str, Any]]:
-        """load_dumped_job
-
-        This function is to load dumped job file.
-
-        Args:
-            batch_job_id (str): job_id(batch_job.id) of batch job to retrieve
-            save_dir: Path to the dumped directory
-            file_output_name (str): dumped file name
-
-        Returns:
-            results: loaded submitted job data
-        """
-
-        save_dir = self.saved_dir if not save_dir else save_dir
-        if Path.exists(Path(save_dir, 'batch_id.json')):
-            with open(Path(save_dir, 'batch_id.json')) as f:
-                batch_job_id = json.load(f)['batch_file_id']
-        else:
-            raise FileNotFoundError
-
-        try:
-            _results = load_jsonline(save_dir, file_output_name)
-        except FileNotFoundError:
-            self.dump_batch_job(batch_job_id, save_dir, file_output_name)
-            _results = load_jsonline(save_dir, file_output_name)
+        input_file_name = self.client.files.retrieve(batch_job.input_file_id).filename
+        output_file_name = Path(self.saved_dir, input_file_name.replace(self.file_input_basename, self.file_output_basename))
+        result.write_to_file(output_file_name)
+        _results = load_jsonline(output_file_name)
         results = [serialize(_result) for _result in _results]
+
         return results
+
+
+    def load_batch(self, batch_data: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        input_filename = batch_data['input_file_name']
+        model_inputs = load_jsonline(Path(self.saved_dir, input_filename))
+
+        result_filepath = input_filename.replace(self.file_input_basename, self.file_output_basename)
+        if Path(self.saved_dir, result_filepath).exists():
+            predictions = load_jsonline(Path(self.saved_dir, result_filepath))
+        else:
+            predictions = self.retrieve_job(batch_data['batch_job_id'])
+
+        return model_inputs, predictions
