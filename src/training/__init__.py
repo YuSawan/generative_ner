@@ -1,5 +1,6 @@
-from training_utils import setup_logger
+from .training_utils import LoggerCallback, setup_logger
 
 __all__ = [
     "setup_logger",
+    "LoggerCallback",
 ]
