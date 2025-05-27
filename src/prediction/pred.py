@@ -1,11 +1,12 @@
 from typing import Any
 
 import torch
+import wandb
 from datasets import Dataset
 from peft import PeftModelForCausalLM
 from tqdm.auto import tqdm
 
-from preprocessor import Preprocessor
+from data.preprocessor import Preprocessor
 
 
 @torch.no_grad()
@@ -15,7 +16,7 @@ def predict(
         preprocessor: Preprocessor
     ) -> list[dict[str, Any]]:
     pbar = tqdm(total=len(predict_dataset), desc="Eval")
-    predicts = []
+    results = []
     for document in predict_dataset:
         pbar.update(1)
         for messages in preprocessor.get_messages(document):
@@ -33,6 +34,21 @@ def predict(
             generated_text = generated_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
             golds = preprocessor.parse_output(gold_output)
             preds = preprocessor.parse_output(generated_text)
-            predicts.append({"text": model_input[1]["content"], "golds": golds, "preds": preds})
+            results.append({"id": document["id"], "text": model_input[1]["content"], "golds": golds, "preds": preds, 'generated_text': generated_text})
 
-    return predicts
+    return results
+
+
+def submit_wandb_predict(predictions: list[dict[str, Any]]) -> None:
+    columns = ["id", "text", "gold", "predictions", "generated_text"]
+    result_table = wandb.Table(columns=columns)
+
+    for prediction in predictions:
+        result_table.add_data(
+            prediction["id"],
+            prediction["text"],
+            ', '.join(prediction["golds"]),
+            ', '.join(prediction["preds"]),
+            prediction["generated_text"]
+        )
+    wandb.log({"predictions": result_table})
