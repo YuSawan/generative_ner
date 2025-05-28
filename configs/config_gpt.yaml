@@ -1,0 +1,29 @@
+# Model Configuration
+gpt_model:
+  model_name: 'gpt-4o-mini-2024-07-18' # Name of the GPT model to use
+  total_cost_limit: 1.0 # Total cost limit in dollars
+  top_p: 0.9 # Top-p (nucleus) sampling
+  temperature: 0.2 # Temperature for sampling
+  seed: 0 # Random seed for reproducibility
+  k: 2 # Number of examples to provide in the prompt
+  n: 1 # Number of responses to generate
+  max_token_length: 4096 # Maximum token length for the model
+  cache_dir: 'tmp/' # Cache directory for the model
+
+
+# Dataset Configuration
+dataset:
+  train_file: 'conll2003/train.jsonl'
+  validation_file: 'conll2003/validation.jsonl'
+  test_file: 'conll2003/test.jsonl'
+  language: 'en' # Language of the prompt 'en' for English, 'ja' for Japanese.
+  format: 'individual' # Format of the prompt, 'collective' for collective prompt (e.g "extract 'person, organization'"), "individual" for individual prompts (e.g "extract 'person'"), "universal" for universal prompts ('UniversalNER')
+  labels2names: # Mapping of labels to IDs
+    'PER': 'person'
+    'ORG': 'organization'
+    'LOC': 'location'
+    'MISC': 'miscellaneous'
+  # System prompt for the model
+    # E.g. 'A virtual assistant answers questions from a user based on the provided text.'
+    # E.g. 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'
+  system_prompt: null
