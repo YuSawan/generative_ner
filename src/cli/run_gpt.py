@@ -40,19 +40,21 @@ def convert_examples_to_messages(
         examples: list[Example],
         format: str,
         labels2names: dict[str, str],
-        language: str
+        language: str,
+        system_prompt: str | None,
     ) -> Iterator[Union[list[dict[str, str]], dict[str, list[dict[str, str]]]]]:
     for text, entities in Preprocessor.segment(examples):
+        base_messages = Preprocessor.get_base_prompt(text, system_prompt, language)
         if format == 'collective':
-            messages = Preprocessor.get_collective_prompt(text, entities, labels2names, language)
-            yield messages
+            messages = Preprocessor.get_collective_prompt(entities, labels2names, language)
+            yield base_messages + messages
         elif format == 'universal':
-            messages = Preprocessor.get_universal_prompt(text, entities, labels2names, language)
-            yield messages
+            messages = Preprocessor.get_universal_prompt(entities, labels2names, language)
+            yield base_messages + messages
         elif format == 'individual':
             label_messages: dict[str, list[dict[str, str]]] = {}
-            for label, message in zip(labels2names.keys(), Preprocessor.get_individual_prompt(text, entities, labels2names, language)):
-                label_messages[label] = message
+            for label, message in zip(labels2names.keys(), Preprocessor.get_individual_prompt(entities, labels2names, language)):
+                label_messages[label] = base_messages + message
             yield label_messages
         else:
             raise NotImplementedError(f"Format '{format}' is not implemented.")
@@ -105,12 +107,12 @@ def main_gpt(data_args: DatasetArguments, model_args: GptModelArguments) -> None
 
     if data_args.format != 'individual':
         demonstrations: list[dict[str, str]] = []
-        for s in convert_examples_to_messages(sampled_demo, data_args.format, data_args.labels2names, data_args.language):
+        for s in convert_examples_to_messages(sampled_demo, data_args.format, data_args.labels2names, data_args.language, data_args.system_prompt):
             assert isinstance(s, list)
             demonstrations.extend(s[1:])
     else:
         label_demonstrations: dict[str, list[dict[str, str]]] = {label: [] for label in data_args.labels2names.keys()}
-        for ls in convert_examples_to_messages(sampled_demo, data_args.format, data_args.labels2names, data_args.language):
+        for ls in convert_examples_to_messages(sampled_demo, data_args.format, data_args.labels2names, data_args.language, data_args.system_prompt):
             assert isinstance(ls, dict)
             for label, messages in ls.items():
                 label_demonstrations[label].extend(messages[1:])
@@ -121,7 +123,7 @@ def main_gpt(data_args: DatasetArguments, model_args: GptModelArguments) -> None
         for example in data["examples"]:
             text = example["text"]
             if data_args.format in ['collective', 'universal']:
-                messages = [_ for _ in convert_examples_to_messages([example], data_args.format, data_args.labels2names, data_args.language)][0]
+                messages = [_ for _ in convert_examples_to_messages([example], data_args.format, data_args.labels2names, data_args.language, data_args.system_prompt)][0]
                 gold_output = messages[-1]['content']
                 messages = messages[:1] + demonstrations + messages[1:-1]
                 gold_spans = [(ent["start"], ent["end"], ent["label"]) for ent in example["entities"]]
@@ -173,7 +175,7 @@ def main_gpt(data_args: DatasetArguments, model_args: GptModelArguments) -> None
                 logger.info(fee)
             elif data_args.format == 'individual':
                 assert label_demonstrations
-                label_messages = [_ for _ in convert_examples_to_messages([example], data_args.format, data_args.labels2names, data_args.language)][0]
+                label_messages = [_ for _ in convert_examples_to_messages([example], data_args.format, data_args.labels2names, data_args.language, data_args.system_prompt)][0]
                 for label, messages in label_messages.items():
                     gold_output = messages[-1]['content']
                     messages = messages[:1] + label_demonstrations[label] + messages[1:-1]
