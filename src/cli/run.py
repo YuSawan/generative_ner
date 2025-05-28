@@ -78,6 +78,7 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
         model = PeftModel.from_pretrained(model, model_args.prev_path)
         if not training_args.do_train:
             model = model.merge_and_unload()
+            model = model.to(training_args.device)
     else:
         if training_args.do_train:
             peft_config = LoraConfig(
@@ -98,7 +99,8 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
             model.enable_input_require_grads()
             model = get_peft_model(model, peft_config)
             model.print_trainable_parameters()
-
+        else:
+            model = model.to(training_args.device)
 
     if training_args.do_train:
         checkpoint = None
