@@ -2,15 +2,15 @@ from typing import Any
 
 import torch
 from datasets import Dataset
-from peft import PeftModelForCausalLM
 from tqdm.auto import tqdm
+from transformers import PreTrainedModel
 
 import wandb
 from src.data.preprocessor import Preprocessor
 from src.gpt.base.utils import regex
 
 
-def _generate(messages: list[dict[str, Any]], model: PeftModelForCausalLM, preprocessor: Preprocessor) -> str:
+def _generate(messages: list[dict[str, Any]], model: PreTrainedModel, preprocessor: Preprocessor) -> str:
     model_input = messages[:-1]
     tokenized_chat = preprocessor.tokenizer.apply_chat_template(
         model_input,
@@ -26,7 +26,7 @@ def _generate(messages: list[dict[str, Any]], model: PeftModelForCausalLM, prepr
 
 @torch.no_grad()
 def predict(
-        model: PeftModelForCausalLM,
+        model: PreTrainedModel,
         predict_dataset: Dataset,
         preprocessor: Preprocessor,
         names2labels: dict[str, str],
