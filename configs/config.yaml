@@ -8,11 +8,16 @@ model:
 
 # Dataset Configuration
 dataset:
-  train_file: 'train.jsonl'
-  validation_file: 'validation.jsonl'
-  test_file: 'test.jsonl'
+  train_file: 'conll2003/train.jsonl'
+  validation_file: 'conll2003/validation.jsonl'
+  test_file: 'conll2003/test.jsonl'
   language: 'en' # Language of the prompt 'en' for English, 'ja' for Japanese.
-  format: 'single'
+  format: 'collective' # Format of the prompt, 'collective' for collective prompt (e.g "extract 'person, organization'"), "individual" for individual prompts (e.g "extract 'person'"), "universal" for universal prompts ('UniversalNER')
+  labels2names: # Mapping of labels to IDs
+    'PER': 'person'
+    'ORG': 'organization'
+    'LOC': 'location'
+    'MISC': 'miscellaneous'
 
 # Dataloader
 remove_unused_columns: false
