@@ -33,6 +33,7 @@ class ModelArguments:
     prev_path: Optional[str] = None
     checkpoint_path: Optional[str] = None
 
+
 @dataclass
 class GptModelArguments:
     """Model arguments for GPT."""
