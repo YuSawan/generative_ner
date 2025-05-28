@@ -61,9 +61,10 @@ class Preprocessor:
             self,
             tokenizer: PreTrainedTokenizer,
             labels2names: dict[str, str],
-            language: str='en',
+            language: str='en', # 'ja' for Japanese, 'en' for English
             format: str = 'collective', # 'individual', or 'universal',
             instruction_template: Optional[str] = None,
+            system_message: Optional[str] = None,
         ) -> None:
         assert tokenizer.chat_template
         self.tokenizer = tokenizer
@@ -71,6 +72,7 @@ class Preprocessor:
         self.format = format
         self.language = language
         self.instruction_template = instruction_template
+        self.system_message = system_message
 
         if '[INST]' in tokenizer.chat_template and '[/INST]' in tokenizer.chat_template:
             # mistral series
@@ -95,84 +97,77 @@ class Preprocessor:
 
     def get_messages(self, document: list[Example]) -> Iterator[list[dict[str, str]]]:
         for text, entities in self.segment(document):
+            base_messages = self.get_base_prompt(text, self.system_message, self.language)
             if self.format == 'collective':
-                messages = self.get_collective_prompt(text, entities, self.labels2names, self.language)
-                yield messages
+                additional_messages = self.get_collective_prompt(entities, self.labels2names, self.language)
+                yield base_messages + additional_messages
             elif self.format == 'universal':
-                messages = self.get_universal_prompt(text, entities, self.labels2names, self.language)
-                yield messages
+                messages = self.get_universal_prompt(entities, self.labels2names, self.language)
+                yield base_messages + messages
             elif self.format == 'individual':
-                for message in self.get_individual_prompt(text, entities, self.labels2names, self.language):
-                    yield message
+                for message in self.get_individual_prompt(entities, self.labels2names, self.language):
+                    yield base_messages + message
             else:
                 raise NotImplementedError(f"Format '{self.format}' is not implemented.")
 
     @staticmethod
-    def get_collective_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
+    def get_base_prompt(text: str, system_message: str | None, language: str) -> list[dict[str, str]]:
+        messages = []
+        if system_message:
+            messages.append({"role": "system", "content": system_message})
+
         if language == 'ja':
-            messages = [
-                {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
+            messages.extend([
                 {"role": "user", "content": f'テキスト: {text}'},
                 {"role": "assistant", "content": 'テキストを読み終えました。'},
+            ])
+        elif language == 'en':
+            messages.extend([
+                {"role": "user", "content": f"Text: {text}"},
+                {"role": "assistant", "content": 'I’ve read this text.'},
+            ])
+        else:
+            raise ValueError(f"Unsupported language: {language}. Supported languages are 'ja' and 'en'.")
+        return messages
+
+    @staticmethod
+    def get_collective_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
+        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
+        if language == 'ja':
+            return [
                 {"role": "user", "content": f'テキストから{'、'.join([label for label in labels2names.values()])}に関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
                 {"role": "assistant", "content": output},
             ]
         else:
-            messages = [
-                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
-                {"role": "user", "content": f"Text: {text}"},
-                {"role": "assistant", "content": 'I’ve read this text.'},
+            return [
                 {"role": "user", "content": f'Please find all the entity words associated with {len(labels2names)} entity types in the given text: {', '.join([label for label in labels2names.values()])}. Output format is "type1: word1; type2: word2".'},
                 {"role": "assistant", "content": output},
             ]
-        return messages
 
     @staticmethod
-    def get_individual_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> Iterator[list[dict[str, str]]]:
-        if language == 'ja':
-            messages = [
-                {"role": "system", "content": "バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。"},
-                {"role": "user", "content": f"テキスト: {text}"},
-                {"role": "assistant", "content": 'テキストを読み終えました。'},
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
-                {"role": "user", "content": f"Text: {text}"},
-                {"role": "assistant", "content": 'I’ve read this text.'},
-            ]
-
+    def get_individual_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> Iterator[list[dict[str, str]]]:
         for label, name in labels2names.items():
             entity_texts = []
             entity_texts = [f'"{entext}"' for enlabel, entext in entities if enlabel == label]
             output = "[" + ', '.join(entity_texts) + "]"
-            additional_content = [
+            yield [
                 {"role": "user", "content": f"What describes {name} in the text?" if language != 'ja' else f"テキストには何の{name}が述べられているでしょうか？"},
                 {"role": "assistant", "content": output},
             ]
-            yield messages + additional_content
 
     @staticmethod
-    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
+    def get_universal_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
         output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
         if language == 'ja':
-            messages = [
-                {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
-                {"role": "user", "content": f'テキスト: {text}'},
-                {"role": "assistant", "content": 'テキストを読み終えました。'},
+            return [
                 {"role": "user", "content": 'テキストから、カテゴリーに関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
                 {"role": "assistant", "content": output},
             ]
         else:
-            messages = [
-                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
-                {"role": "user", "content": f"Text: {text}"},
-                {"role": "assistant", "content": 'I’ve read this text.'},
+            return [
                 {"role": "user", "content": 'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2".'},
                 {"role": "assistant", "content": output},
             ]
-        return messages
 
     @staticmethod
     def parse_output(output: str, format: str) -> list[str]:
