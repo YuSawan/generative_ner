@@ -73,7 +73,7 @@ class Preprocessor:
             tokenizer: PreTrainedTokenizer,
             labels2names: dict[str, str],
             language: str='en',
-            format: str = 'single' # 'single' or 'multi'
+            format: str = 'collective' # 'individual', or 'universal'
         ) -> None:
         self.tokenizer = tokenizer
         if not self.tokenizer.chat_template:
@@ -84,7 +84,7 @@ class Preprocessor:
             self.response_template = "<|start_header_id|>assistant<|end_header_id|>"
 
         self.labels2names = labels2names
-        self.format = format # 'collective', 'individual', or 'universal'
+        self.format = format
         self.language = language
 
     @staticmethod
@@ -106,27 +106,6 @@ class Preprocessor:
                     yield message
             else:
                 raise NotImplementedError(f"Format '{self.format}' is not implemented.")
-
-    @staticmethod
-    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
-        if language == 'ja':
-            messages = [
-                {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
-                {"role": "user", "content": f'テキスト: {text}'},
-                {"role": "assistant", "content": 'テキストを読み終えました。'},
-                {"role": "user", "content": 'テキストから、カテゴリーに関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
-                {"role": "assistant", "content": output},
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
-                {"role": "user", "content": f"Text: {text}"},
-                {"role": "assistant", "content": 'I’ve read this text.'},
-                {"role": "user", "content": 'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2".'},
-                {"role": "assistant", "content": output},
-            ]
-        return messages
 
     @staticmethod
     def get_collective_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
@@ -175,6 +154,27 @@ class Preprocessor:
             yield messages + additional_content
 
     @staticmethod
+    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
+        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
+        if language == 'ja':
+            messages = [
+                {"role": "system", "content": 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'},
+                {"role": "user", "content": f'テキスト: {text}'},
+                {"role": "assistant", "content": 'テキストを読み終えました。'},
+                {"role": "user", "content": 'テキストから、カテゴリーに関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
+                {"role": "assistant", "content": output},
+            ]
+        else:
+            messages = [
+                {"role": "system", "content": "A virtual assistant answers questions from a user based on the provided text."},
+                {"role": "user", "content": f"Text: {text}"},
+                {"role": "assistant", "content": 'I’ve read this text.'},
+                {"role": "user", "content": 'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2".'},
+                {"role": "assistant", "content": output},
+            ]
+        return messages
+
+    @staticmethod
     def parse_output(output: str, format: str) -> list[str]:
         entities = []
         if format == 'individual':
@@ -192,10 +192,9 @@ class Preprocessor:
 
         return entities
 
-
     def __call__(self, document: list[Example]) -> Iterator[str]:
         for messages in self.get_messages(document):
-            yield self.tokenizer.apply_chat_template(messages)
+            yield self.tokenizer.apply_chat_template(messages, return_dict='pt')
 
 
 # class T5Preprocessor(Preprocessor):
