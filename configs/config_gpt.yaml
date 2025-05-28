@@ -23,3 +23,7 @@ dataset:
     'ORG': 'organization'
     'LOC': 'location'
     'MISC': 'miscellaneous'
+  # System prompt for the model
+    # E.g. 'A virtual assistant answers questions from a user based on the provided text.'
+    # E.g. 'バーチャルアシスタントは、提供されたテキストに基づいてユーザーの質問に答えます。'
+  system_prompt: null

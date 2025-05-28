@@ -21,6 +21,7 @@ class DatasetArguments:
     language: str = 'en' # "en" or "ja"
     format: str = 'collective' # "collective", "individual" or "universal"
     labels2names: Optional[dict[str, str]] = None
+    system_prompt: Optional[str] = None
 
 
 @dataclass
