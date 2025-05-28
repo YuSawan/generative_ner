@@ -142,9 +142,7 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
         names2labels = {v: k for k, v in data_args.labels2names.items()}
         predictions = predict(model, raw_datasets["validation"], preprocessor, names2labels)
         outputs_data = convert_predictions_to_json(predictions, raw_datasets["validation"])
-        with open(os.path.join(training_args.output_dir, "predictions.json"), "w", encoding="utf-8") as f:
-            outputs_data.to_json(f, orient="records", force_ascii=False, indent=4)
-
+        outputs_data.to_json(os.path.join(training_args.output_dir, "predictions.jsonl"))
 
 def cli_main() -> None:
     data_args, model_args, training_args = parse_args()
