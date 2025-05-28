@@ -6,17 +6,6 @@ from typing import Any, Iterator, Optional, TypedDict
 from datasets import Dataset, DatasetDict
 from transformers import BatchEncoding, PreTrainedTokenizer, TrainingArguments
 
-CHAT_TEMPLATE = """\
-{% set loop_messages = messages %}
-{% for message in loop_messages %}
-{% set content = bos_token + message['role'] + ': ' + message['content'] + eos_token %}
-{{ content }}
-{% endfor %}
-{% if add_generation_prompt %}
-{{ bos_token + 'assistant: ' }}
-{% endif %}\
-"""
-
 
 class Entity(TypedDict):
     start: int
@@ -73,19 +62,30 @@ class Preprocessor:
             tokenizer: PreTrainedTokenizer,
             labels2names: dict[str, str],
             language: str='en',
-            format: str = 'collective' # 'individual', or 'universal'
+            format: str = 'collective', # 'individual', or 'universal',
+            instruction_template: Optional[str] = None,
         ) -> None:
+        assert tokenizer.chat_template
         self.tokenizer = tokenizer
-        if not self.tokenizer.chat_template:
-            self.tokenizer.chat_template = CHAT_TEMPLATE
-            self.response_template = self.tokenizer.bos_token + "assistant: "
-        else:
-            ## Instruct-models
-            self.response_template = "<|start_header_id|>assistant<|end_header_id|>"
-
         self.labels2names = labels2names
         self.format = format
         self.language = language
+        self.instruction_template = instruction_template
+
+        if '[INST]' in tokenizer.chat_template and '[/INST]' in tokenizer.chat_template:
+            # mistral series
+            self.response_template = '[/INST]'
+        elif '<|start_header_id|>' in tokenizer.chat_template and '<|end_header_id|>' in tokenizer.chat_template:
+            # llama series
+            self.response_template = '<|start_header_id|>assistant<|end_header_id|>'
+        elif '<start_of_turn>' in tokenizer.chat_template and '<end_of_turn>' in tokenizer.chat_template:
+            # gemma series
+            self.response_template = '<start_of_turn>model\n'
+        elif '<|im_start|>' in tokenizer.chat_template and '<|im_end|>' in tokenizer.chat_template:
+            # chatml format (e.g., Qwen series)
+            self.response_template = '<|im_start|>assistant\n'
+        else:
+            raise NotImplementedError(f"Unknown chat template format: {tokenizer.chat_template}.")
 
     @staticmethod
     def segment(document: list[Example]) -> Iterator[tuple[str, list[tuple[str, str]]]]:
