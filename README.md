@@ -8,9 +8,14 @@ A library for Generative named entity recognition
 ```
 git clone git@github.com:YuSawan/generative_ner.git
 cd generative_ner
+
+# if venv
 python -m venv .venv
 source .venv/bin/activate
 pip install .
+
+# if uv
+uv sync
 ```
 
 ### Dataset preparation
@@ -36,16 +41,28 @@ pip install .
 
 
 ### GPT series
+#### OpenAI API
 ```
-python src/cli/run.py \
-    --do_train \
-    --do_eval \
-    --do_predict \
-    --config_file configs/config.yaml
-    --output_dir ./output/
+python src/cli/run_gpt.py \
+    -c configs/config_gpt.yaml
+    -o ./output/
+    -m generate # {generate, debug, estimate}
+```
+#### OpenAI BatchAPI
+```
+# Submit Job to BatchAPI
+python src/cli/run_gpt.py \
+    -c configs/config_gpt.yaml
+    -o ./output/
+    -m batch
+
+# Retrieve Job from BatchAPI
+python src/cli/run_batchapi.py \
+    -c configs/config_gpt.yaml
+    -o ./output/
 ```
 
-### Open LLMs (LLama)
+### Open LLMs
 #### Zero-shot
 ```
 python src/cli/run.py \
