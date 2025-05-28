@@ -73,6 +73,21 @@ def predict(
     return predictions
 
 
+def convert_predictions_to_json(predictions: list[dict[str, Any]], dataset: Dataset) -> Dataset:
+    results: dict[str, list[dict[str, int|str]]] = {}
+    for prediction in predictions:
+        try:
+            results[prediction["id"]].extend([{"start": s, "end": e, "label": label} for s, e, label in prediction["preds"]])
+        except KeyError:
+            results[prediction["id"]] = [{"start": s, "end": e, "label": label} for s, e, label in prediction["preds"]]
+
+    for data in dataset:
+        for example in data["examples"]:
+            example["prediction"] = results[example["id"]]
+
+    return dataset
+
+
 def submit_wandb_predict(predictions: list[dict[str, Any]]) -> None:
     columns = ["id", "text", "gold", "predictions", "generated_text"]
     result_table = wandb.Table(columns=columns)
