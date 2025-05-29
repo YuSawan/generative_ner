@@ -19,8 +19,8 @@ def _generate(messages: list[dict[str, Any]], model: PreTrainedModel, preprocess
         add_generation_prompt=True,
         return_tensors="pt",
     )
-    tokenized_chat = tokenized_chat.to(model.device, pad_token_id=preprocessor.tokenizer.eos_token_id)
-    generated_tokens = model.generate(tokenized_chat)
+    tokenized_chat = tokenized_chat.to(model.device)
+    generated_tokens = model.generate(tokenized_chat, pad_token_id=preprocessor.tokenizer.eos_token_id)
     generated_text = preprocessor.tokenizer.decode(generated_tokens[0]).replace(preprocessor.tokenizer.eos_token, "\n")
     generated_text = generated_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
     return generated_text
