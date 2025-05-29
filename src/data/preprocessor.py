@@ -92,7 +92,7 @@ class Preprocessor:
     @staticmethod
     def segment(document: list[Example]) -> Iterator[tuple[str, list[tuple[str, str]]]]:
         for example in document:
-            entities = [(e['label'], example['text'][e['start']: e['end']]) for e in example['entities']]
+            entities = list(set([(e['label'], example['text'][e["start"]: e["end"]]) for e in example['entities']]))
             yield example['text'], entities
 
     def get_messages(self, document: list[Example]) -> Iterator[list[dict[str, str]]]:
