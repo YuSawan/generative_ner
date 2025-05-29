@@ -12,13 +12,14 @@ from src.gpt.base.utils import regex
 
 def _generate(messages: list[dict[str, Any]], model: PreTrainedModel, preprocessor: Preprocessor) -> str:
     model_input = messages[:-1]
+    print(model.device)
     tokenized_chat = preprocessor.tokenizer.apply_chat_template(
         model_input,
         tokenize=True,
         add_generation_prompt=True,
         return_tensors="pt",
     )
-    tokenized_chat = tokenized_chat.to(model.device)
+    tokenized_chat = tokenized_chat.to(model.device, pad_token_id=preprocessor.tokenizer.eos_token_id)
     generated_tokens = model.generate(tokenized_chat)
     generated_text = preprocessor.tokenizer.decode(generated_tokens[0]).replace(preprocessor.tokenizer.eos_token, "\n")
     generated_text = generated_text.split("<|start_header_id|>assistant<|end_header_id|>")[-1].strip()
