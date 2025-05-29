@@ -180,8 +180,9 @@ class Preprocessor:
                 else:
                     entities.append(entity)
         elif format in ['collective', 'universal']:
-            for segment in output.split(";"):
-                entities.append(normalize_answer(segment))
+            for line in output.split('\n'):
+                for segment in line.split(";"):
+                    entities.append(normalize_answer(segment))
         else:
             raise NotImplementedError(f"Format '{format}' is not implemented.")
 

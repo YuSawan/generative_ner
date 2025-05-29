@@ -12,7 +12,6 @@ from src.gpt.base.utils import regex
 
 def _generate(messages: list[dict[str, Any]], model: PreTrainedModel, preprocessor: Preprocessor) -> str:
     model_input = messages[:-1]
-    print(model.device)
     tokenized_chat = preprocessor.tokenizer.apply_chat_template(
         model_input,
         tokenize=True,
@@ -49,7 +48,7 @@ def predict(
                     for p in sorted(set(preds)):
                         if ": " not in p:
                             continue
-                        label, mention = p.split(": ")
+                        label, mention = p.split(": ")[:2]
                         try:
                             pred_spans.extend([(s, e, names2labels[label]) for s, e in regex(text.lower(), mention)])
                         except KeyError:
