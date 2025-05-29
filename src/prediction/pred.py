@@ -117,14 +117,9 @@ def predict(
 
         if texts and model_inputs and gold_spans:
             generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
-            if format in ['collective', 'universal']:
-                predictions.extend(convert_text_to_spans(
-                    format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels
-                ))
-            elif format == 'individual':
-                predictions.extend(convert_text_to_spans(
-                    format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels, labels
-                ))
+            predictions.extend(convert_text_to_spans(
+                format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels, None if format in ['collective', 'universal'] else labels
+            ))
 
     return predictions
 
