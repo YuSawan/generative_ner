@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 
 import torch
 from datasets import Dataset
@@ -28,6 +28,45 @@ def _generate(
         generated_texts.append(generated_text)
     return generated_text
 
+
+def convert_text_to_spans(
+        format: str,
+        ids: list[str],
+        texts: list[str],
+        gold_spans: list[list[tuple[int, int, str]]],
+        generated_texts: list[str],
+        preprocessor: Preprocessor,
+        names2labels: dict[str, str],
+        labels: Optional[list[str]] = None
+    ) -> list[dict[str, Any]]:
+    predictions = []
+    if format in ['collective', 'universal']:
+        for t, gs, gt, eid in zip(texts, gold_spans, generated_texts, ids):
+            ps = []
+            preds = preprocessor.parse_output(gt, format)
+            for p in sorted(set(preds)):
+                if ": " not in p:
+                    continue
+                label, mention = p.split(": ")[:2]
+                try:
+                    ps.extend([(s, e, names2labels[label]) for s, e in regex(t.lower(), mention)])
+                except KeyError:
+                    ps.extend([(s, e, label) for s, e in regex(t.lower(), mention)])
+            predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
+    elif format == 'individual':
+        assert labels is not None and len(labels) == len(generated_texts)
+        for t, gs, gt, lb, eid in zip(texts, gold_spans, generated_texts, labels, ids):
+            ps = []
+            preds = preprocessor.parse_output(gt, format)
+            for p in sorted(set(preds)):
+                ps.extend([(s, e, names2labels[lb]) for s, e in regex(t.lower(), p)])
+            predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
+    else:
+        raise NotImplementedError(f"Format {format} is not implemented")
+
+    return predictions
+
+
 @torch.no_grad()
 def predict(
         model: PreTrainedModel,
@@ -43,48 +82,49 @@ def predict(
     for document in predict_dataset:
         pbar.update(1)
 
-        texts, model_inputs, gold_spans = [], [], []
+        ids, texts, model_inputs, gold_spans = [], [], [], []
         for example in document["examples"]:
             eid = example["id"]
             text = example["text"]
             if format in ['collective', 'universal']:
+                ids.append(eid)
                 texts.append(text)
                 gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"]])
                 model_inputs.append([messages[:-1] for messages in preprocessor.get_messages([example])][0])
                 if len(texts) == batch_size:
                     generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
-                    for t, gs, gt in zip(texts, gold_spans, generated_texts):
-                        ps = []
-                        preds = preprocessor.parse_output(gt, format)
-                        for p in sorted(set(preds)):
-                            if ": " not in p:
-                                continue
-                            label, mention = p.split(": ")[:2]
-                            try:
-                                ps.extend([(s, e, names2labels[label]) for s, e in regex(t.lower(), mention)])
-                            except KeyError:
-                                ps.extend([(s, e, label) for s, e in regex(t.lower(), mention)])
-                        predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
+                    predictions.extend(convert_text_to_spans(
+                        format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels
+                    ))
+                    texts, model_inputs, gold_spans = [], [], []
 
             elif format == 'individual':
+                labels = []
                 for label, messages in zip(names2labels.values(), preprocessor.get_messages([example])):
+                    ids.append(eid)
                     texts.append(text)
                     gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"] if ent["label"] == label])
                     model_inputs.append(messages[:-1])
+                    labels.append(label)
                     if len(texts) == batch_size:
                         generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
-                        for t, gs, gt in zip(texts, gold_spans, generated_texts):
-                            ps = []
-                            preds = preprocessor.parse_output(gt, format)
-
-                            for p in sorted(set(preds)):
-                                try:
-                                    ps.extend([(s, e, names2labels[label]) for s, e in regex(text.lower(), p)])
-                                except KeyError:
-                                    ps.extend([(s, e, label) for s, e in regex(text.lower(), p)])
-                            predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
+                        predictions.extend(convert_text_to_spans(
+                            format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels, labels
+                        ))
+                        texts, model_inputs, gold_spans, ids, labels = [], [], [], [], []
             else:
                 raise NotImplementedError(f"Format {format} is not implemented")
+
+        if texts and model_inputs and gold_spans:
+            generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
+            if format in ['collective', 'universal']:
+                predictions.extend(convert_text_to_spans(
+                    format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels
+                ))
+            elif format == 'individual':
+                predictions.extend(convert_text_to_spans(
+                    format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels, labels
+                ))
 
     return predictions
 
