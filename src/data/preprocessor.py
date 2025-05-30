@@ -36,7 +36,7 @@ def normalize_answer(s: str) -> str:
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def parser(text: str) -> list[tuple[str] | str]:
+def parser(text: str) -> list[tuple[str, str] | str]:
     try:
         match = re.match(r'\[(.*?)\]', text)
         if match:
@@ -192,7 +192,7 @@ class Preprocessor:
         return messages
 
     @staticmethod
-    def parse_output(output: str) -> list[tuple[str] | str]:
+    def parse_output(output: str) -> list[tuple[str, str] | str]:
         entities = []
         for entity in parser(output):
             entities.append(entity)
