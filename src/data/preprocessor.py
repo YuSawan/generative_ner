@@ -122,7 +122,7 @@ class Preprocessor:
         messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
-                {"role": "user", "content": f'テキストからカテゴリに関連するすべてのエンティティを見つけてください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nOption: {', '.join([label for label in labels2names.values()])}。\nText: {text}'},
+                {"role": "user", "content": f'テキストからカテゴリに関連するすべてのエンティティを見つけてください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]\nOption: {', '.join([label for label in labels2names.values()])}。\nText: {text}'},
                 {"role": "assistant", "content": output},
             ])
         elif language == 'en':
@@ -142,7 +142,7 @@ class Preprocessor:
         messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
-                {"role": "user", "content": f'与えられたテキストからすべてのエンティティを抽出し、エンティティタイプを識別してください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nテキスト: {text}'},
+                {"role": "user", "content": f'与えられたテキストからすべてのエンティティを抽出し、エンティティタイプを識別してください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]\nテキスト: {text}'},
                 {"role": "assistant", "content": output},
             ])
         elif language == 'en':
@@ -180,12 +180,12 @@ class Preprocessor:
             output = "[" + ', '.join([f'"{mention}"' for mention, _ in entity_list]) + "]"
             if language == 'ja':
                 messages.extend([
-                    {"role": "user", "content": f"テキストには何の{name}が述べられていますか？"},
+                    {"role": "user", "content": f'テキストには何の{name}が述べられていますか？ 出力は以下の形式のリストにしてください： ["entity 1", ... ]'},
                     {"role": "assistant", "content": output},
                 ])
             elif language == 'en':
                 messages.extend([
-                    {"role": "user", "content": f"What describes {name} in the text?"},
+                    {"role": "user", "content": f'What describes {name} in the text? The output should be in a list of the following format: ["entity 1", ... ]'},
                     {"role": "assistant", "content": output},
                 ])
             else:
