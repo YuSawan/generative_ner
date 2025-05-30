@@ -61,7 +61,7 @@ def convert_text_to_spans(
             for p in sorted(set(preds)):
                 if not isinstance(p, str):
                     continue
-                ps.extend([(s, e, names2labels[lb]) for s, e in regex(t.lower(), p)])
+                ps.extend([(s, e, lb) for s, e in regex(t.lower(), p)])
             predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
     else:
         raise NotImplementedError(f"Format {format} is not implemented")
@@ -106,7 +106,7 @@ def predict(
                 labels = []
                 model_input = messages[:3] if preprocessor.system_message else messages[:2]
                 label_model_input = messages[3:] if preprocessor.system_message else messages[2:]
-                for i, label in enumerate(names2labels.keys()):
+                for i, label in enumerate(names2labels.values()):
                     ids.append(eid)
                     texts.append(text)
                     labels.append(label)
