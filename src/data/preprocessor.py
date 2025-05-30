@@ -1,4 +1,5 @@
-import json
+import ast
+import random
 import re
 import string
 from typing import Any, Iterator, Optional, TypedDict
@@ -35,14 +36,14 @@ def normalize_answer(s: str) -> str:
     return white_space_fix(remove_articles(remove_punc(lower(s))))
 
 
-def single_parser(text: str) -> list[tuple[str] | str]:
+def parser(text: str) -> list[tuple[str] | str]:
     try:
         match = re.match(r'\[(.*?)\]', text)
         if match:
             text = match.group()
         else:
             text = '[]'
-        items = json.loads(text)
+        items = ast.literal_eval(text)
         formatted_items = []
         for item in items:
             if isinstance(item, list) or isinstance(item, tuple):
@@ -63,7 +64,6 @@ class Preprocessor:
             labels2names: dict[str, str],
             language: str='en', # 'ja' for Japanese, 'en' for English
             format: str = 'collective', # 'individual', or 'universal',
-            instruction_template: Optional[str] = None,
             system_message: Optional[str] = None,
         ) -> None:
         assert tokenizer.chat_template
@@ -71,8 +71,24 @@ class Preprocessor:
         self.labels2names = labels2names
         self.format = format
         self.language = language
-        self.instruction_template = instruction_template
         self.system_message = system_message
+
+        self.instruction_template = None
+        if format == 'individual':
+            if '[INST]' in tokenizer.chat_template and '[/INST]' in tokenizer.chat_template:
+                # mistral series
+                self.instruction_template = '[INST]'
+            elif '<|start_header_id|>' in tokenizer.chat_template and '<|end_header_id|>' in tokenizer.chat_template:
+                # llama series
+                self.instruction_template = '<|start_header_id|>user<|end_header_id|>'
+            elif '<start_of_turn>' in tokenizer.chat_template and '<end_of_turn>' in tokenizer.chat_template:
+                # gemma series
+                self.instruction_template = '<start_of_turn>user\n'
+            elif '<|im_start|>' in tokenizer.chat_template and '<|im_end|>' in tokenizer.chat_template:
+                # chatml format (e.g., Qwen series)
+                self.instruction_template = '<|im_start|>user\n'
+            else:
+                raise NotImplementedError(f"Unknown chat template format: {tokenizer.chat_template}.")
 
         if '[INST]' in tokenizer.chat_template and '[/INST]' in tokenizer.chat_template:
             # mistral series
@@ -95,27 +111,36 @@ class Preprocessor:
             entities = list(set([(e['label'], example['text'][e["start"]: e["end"]]) for e in example['entities']]))
             yield example['text'], entities
 
-    def get_messages(self, document: list[Example]) -> Iterator[list[dict[str, str]]]:
-        for text, entities in self.segment(document):
-            base_messages = self.get_base_prompt(text, self.system_message, self.language)
-            if self.format == 'collective':
-                additional_messages = self.get_collective_prompt(entities, self.labels2names, self.language)
-                yield base_messages + additional_messages
-            elif self.format == 'universal':
-                messages = self.get_universal_prompt(entities, self.labels2names, self.language)
-                yield base_messages + messages
-            elif self.format == 'individual':
-                for message in self.get_individual_prompt(entities, self.labels2names, self.language):
-                    yield base_messages + message
-            else:
-                raise NotImplementedError(f"Format '{self.format}' is not implemented.")
+    def get_messages(self, text: str, entities: list[tuple[str, str]]) -> list[dict[str, str]]:
+        if self.format == 'collective':
+            return self.get_collective_prompt(text, entities, self.labels2names, self.language, self.system_message)
+        elif self.format == 'universal':
+            return self.get_universal_prompt(text, entities, self.labels2names, self.language, self.system_message)
+        elif self.format == 'individual':
+            return self.get_individual_prompt(text, entities, self.labels2names, self.language, self.system_message)
+        else:
+            raise NotImplementedError(f"Format '{self.format}' is not implemented.")
 
     @staticmethod
-    def get_base_prompt(text: str, system_message: str | None, language: str) -> list[dict[str, str]]:
-        messages = []
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
+    def get_collective_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+        entity_list = [f'("{entext}", "{labels2names[label]}")' for label, entext in entities]
+        output = "[" + ', '.join(entity_list) + "]"
+        messages = [{"role": "system", "content": system_message}] if system_message else []
+        if language == 'ja':
+            messages.extend([
+                {"role": "user", "content": f'テキストからカテゴリに関連するすべてのエンティティを見つけてください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nOption: {', '.join([label for label in labels2names.values()])}。\nText: {text}'},
+                {"role": "assistant", "content": output},
+            ])
+        else:
+            messages.extend([
+                {"role": "user", "content": f'Find all the entities associated with the category in the text. The output should be in a list of tuples of the following format: [("entity 1", "type of entity 1"), ... ]\nOption: {', '.join([label for label in labels2names.values()])}.\nText: {text}'},
+                {"role": "assistant", "content": output},
+            ])
+        return messages
 
+    @staticmethod
+    def get_individual_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+        messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
                 {"role": "user", "content": f'テキスト: {text}'},
@@ -128,68 +153,48 @@ class Preprocessor:
             ])
         else:
             raise ValueError(f"Unsupported language: {language}. Supported languages are 'ja' and 'en'.")
-        return messages
 
-    @staticmethod
-    def get_collective_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
-        if language == 'ja':
-            return [
-                {"role": "user", "content": f'テキストから{'、'.join([label for label in labels2names.values()])}に関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
-                {"role": "assistant", "content": output},
-            ]
-        else:
-            return [
-                {"role": "user", "content": f'Please find all the entity words associated with {len(labels2names)} entity types in the given text: {', '.join([label for label in labels2names.values()])}. Output format is "type1: word1; type2: word2".'},
-                {"role": "assistant", "content": output},
-            ]
+        labels = list(labels2names.keys())
+        random.shuffle(labels)
 
-    @staticmethod
-    def get_individual_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> Iterator[list[dict[str, str]]]:
-        for label, name in labels2names.items():
+        for label in labels:
+            name = labels2names[label]
             entity_texts = []
             entity_texts = [f'"{entext}"' for enlabel, entext in entities if enlabel == label]
             output = "[" + ', '.join(entity_texts) + "]"
-            yield [
+            messages.extend([
                 {"role": "user", "content": f"What describes {name} in the text?" if language != 'ja' else f"テキストには何の{name}が述べられているでしょうか？"},
                 {"role": "assistant", "content": output},
-            ]
+            ])
+        return messages
 
     @staticmethod
-    def get_universal_prompt(entities: list[tuple[str, str]], labels2names: dict[str, str], language: str) -> list[dict[str, str]]:
-        output = '; '.join([f'{labels2names[label]}: {entext}' for label, entext in entities]) if entities else " None"
+    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+        entity_list = [f'("{entext}", "{labels2names[label]}")' for label, entext in entities]
+        output = "[" + ', '.join(entity_list) + "]"
+        messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
-            return [
-                {"role": "user", "content": 'テキストから、カテゴリーに関連するエンティティをすべて見つけてください。 出力フォーマットは、"type1: word1; type2: word2"です。'},
+            messages.extend([
+                {"role": "user", "content": f'与えられたテキストからすべてのエンティティを抽出し、エンティティタイプを識別してください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nテキスト: {text}'},
                 {"role": "assistant", "content": output},
-            ]
+            ])
         else:
-            return [
-                {"role": "user", "content": 'Please find all the entity words associated with the category in the given text. Output format is "type1: word1; type2: word2".'},
+            messages.extend([
+                {"role": "user", "content": f'Given a passage, your task is to extract all entities and identify their entity types from the text. The output should be in a list of tuples of the following format: [("entity 1", "type of entity 1"), ... ]\nPassage: {text}'},
                 {"role": "assistant", "content": output},
-            ]
+            ])
+        return messages
 
     @staticmethod
-    def parse_output(output: str, format: str) -> list[str]:
+    def parse_output(output: str) -> list[tuple[str] | str]:
         entities = []
-        if format == 'individual':
-            for entity in single_parser(output):
-                if isinstance(entity, tuple):
-                    for e in entity:
-                        entities.append(e)
-                else:
-                    entities.append(entity)
-        elif format in ['collective', 'universal']:
-            for line in output.split('\n'):
-                for segment in line.split(";"):
-                    entities.append(normalize_answer(segment))
-        else:
-            raise NotImplementedError(f"Format '{format}' is not implemented.")
-
+        for entity in parser(output):
+            entities.append(entity)
         return entities
 
     def __call__(self, document: list[Example]) -> Iterator[str]:
-        for messages in self.get_messages(document):
+        for text, entities in self.segment(document):
+            messages = self.get_messages(text, entities)
             yield self.tokenizer.apply_chat_template(messages, return_dict='pt')
 
 
