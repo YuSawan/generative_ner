@@ -67,11 +67,11 @@ def main_batchapi(data_args: DatasetArguments, model_args: GptModelArguments) ->
                 gold_spans = [(ent["start"], ent["end"], ent["label"]) for ent in example["entities"]]
                 generated_text = all_generations.pop(0)
                 pred_spans = []
-                preds = Preprocessor.parse_output(generated_text, data_args.format)
+                preds = Preprocessor.parse_output(generated_text)
                 for p in sorted(set(preds)):
-                    if ": " not in p:
+                    if not isinstance(p, tuple) or len(p) != 2:
                         continue
-                    label, mention = p.split(": ")
+                    mention, label = p[0], p[1]
                     try:
                         pred_spans.extend([(s, e, names2labels[label]) for s, e in regex(text.lower(), mention)])
                     except KeyError:
@@ -89,12 +89,11 @@ def main_batchapi(data_args: DatasetArguments, model_args: GptModelArguments) ->
                     generated_text = all_generations.pop(0)
 
                     pred_spans = []
-                    preds = Preprocessor.parse_output(generated_text, data_args.format)
+                    preds = Preprocessor.parse_output(generated_text)
                     for p in sorted(set(preds)):
-                        try:
-                            pred_spans.extend([(s, e, names2labels[label]) for s, e in regex(text.lower(), p)])
-                        except KeyError:
-                            pred_spans.extend([(s, e, label) for s, e in regex(text.lower(), p)])
+                        if not isinstance(p, str):
+                            continue
+                        pred_spans.extend([(s, e, label) for s, e in regex(text.lower(), p)])
                     predictions.append({"id": example["id"], "text": text, "golds": gold_spans, "preds": pred_spans, 'generated_text': generated_text})
         pbar.close()
     else:
