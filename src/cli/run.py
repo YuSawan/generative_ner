@@ -129,7 +129,7 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
 
     if training_args.do_eval:
         names2labels = {v: k for k, v in data_args.labels2names.items()}
-        predictions = predict(model, raw_datasets['test'], preprocessor, names2labels)
+        predictions = predict(model, raw_datasets['test'], preprocessor, names2labels, training_args.eval_batch_size)
         metrics = {f"eval_{k}": v for k, v in evaluate(predictions).items()}
         logger.info(f"eval metrics: {metrics}")
 

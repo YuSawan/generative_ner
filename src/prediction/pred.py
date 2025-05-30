@@ -26,7 +26,7 @@ def _generate(
         generated_text = preprocessor.tokenizer.decode(tokens).replace(preprocessor.tokenizer.eos_token, "\n")
         generated_text = generated_text.split(preprocessor.response_template)[-1].strip()
         generated_texts.append(generated_text)
-    return generated_text
+    return generated_texts
 
 
 def convert_text_to_spans(
