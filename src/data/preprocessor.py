@@ -105,7 +105,7 @@ class Preprocessor:
         else:
             raise NotImplementedError(f"Unknown chat template format: {tokenizer.chat_template}.")
 
-    def get_messages(self, text: str, entities: list[tuple[str, str]]) -> list[dict[str, str]]:
+    def get_messages(self, text: str, entities: list[Entity]) -> list[dict[str, str]]:
         if self.format == 'collective':
             return self.get_collective_prompt(text, entities, self.labels2names, self.language, self.system_message)
         elif self.format == 'universal':
@@ -116,9 +116,9 @@ class Preprocessor:
             raise NotImplementedError(f"Format '{self.format}' is not implemented.")
 
     @staticmethod
-    def get_collective_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
-        entity_list = [f'("{entext}", "{labels2names[label]}")' for label, entext in entities]
-        output = "[" + ', '.join(entity_list) + "]"
+    def get_collective_prompt(text: str, entities: list[Entity], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+        entity_list = list(set([(text[e["start"]: e["end"]], labels2names[e["label"]]) for e in entities]))
+        output = "[" + ', '.join([f'("{mention}", "{label}")' for mention, label in entity_list]) + "]"
         messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
@@ -136,7 +136,7 @@ class Preprocessor:
         return messages
 
     @staticmethod
-    def get_individual_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+    def get_individual_prompt(text: str, entities: list[Entity], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
         messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
@@ -156,9 +156,8 @@ class Preprocessor:
 
         for label in labels:
             name = labels2names[label]
-            entity_texts = []
-            entity_texts = [f'"{entext}"' for enlabel, entext in entities if enlabel == label]
-            output = "[" + ', '.join(entity_texts) + "]"
+            entity_list = list(set([(text[e["start"]: e["end"]], labels2names[e["label"]]) for e in entities if e["label"] == label]))
+            output = "[" + ', '.join([f'"{mention}"' for mention, _ in entity_list]) + "]"
             if language == 'ja':
                 messages.extend([
                     {"role": "user", "content": f"テキストには何の{name}が述べられていますか？"},
@@ -174,9 +173,9 @@ class Preprocessor:
         return messages
 
     @staticmethod
-    def get_universal_prompt(text: str, entities: list[tuple[str, str]], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
-        entity_list = [f'("{entext}", "{labels2names[label]}")' for label, entext in entities]
-        output = "[" + ', '.join(entity_list) + "]"
+    def get_universal_prompt(text: str, entities: list[Entity], labels2names: dict[str, str], language: str, system_message: Optional[str] = None) -> list[dict[str, str]]:
+        entity_list = list(set([(text[e["start"]: e["end"]], labels2names[e["label"]]) for e in entities]))
+        output = "[" + ', '.join([f'("{mention}", "{label}")' for mention, label in entity_list]) + "]"
         messages = [{"role": "system", "content": system_message}] if system_message else []
         if language == 'ja':
             messages.extend([
@@ -201,8 +200,7 @@ class Preprocessor:
 
     def __call__(self, document: list[Example]) -> Iterator[str]:
         for example in document:
-            entities = list(set([(e['label'], example['text'][e["start"]: e["end"]]) for e in example['entities']]))
-            messages = self.get_messages(example["text"], entities)
+            messages = self.get_messages(example["text"], example["entities"])
             yield self.tokenizer.apply_chat_template(messages, return_dict='pt')
 
 
