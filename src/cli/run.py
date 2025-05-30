@@ -1,4 +1,5 @@
 
+import json
 import os
 
 import torch
@@ -78,6 +79,7 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
         model = PeftModel.from_pretrained(model, model_args.prev_path)
         if not training_args.do_train:
             model = model.merge_and_unload()
+            model = model.to(training_args.device)
     else:
         if training_args.do_train:
             peft_config = LoraConfig(
@@ -98,7 +100,8 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
             model.enable_input_require_grads()
             model = get_peft_model(model, peft_config)
             model.print_trainable_parameters()
-
+        else:
+            model = model.to(training_args.device)
 
     if training_args.do_train:
         checkpoint = None
@@ -127,7 +130,7 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
 
     if training_args.do_eval:
         names2labels = {v: k for k, v in data_args.labels2names.items()}
-        predictions = predict(model, raw_datasets['test'], preprocessor, names2labels)
+        predictions = predict(model, raw_datasets['test'], preprocessor, names2labels, training_args.eval_batch_size)
         metrics = {f"eval_{k}": v for k, v in evaluate(predictions).items()}
         logger.info(f"eval metrics: {metrics}")
 
@@ -140,9 +143,11 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
 
     if training_args.do_predict:
         names2labels = {v: k for k, v in data_args.labels2names.items()}
-        predictions = predict(model, raw_datasets["validation"], preprocessor, names2labels)
+        predictions = predict(model, raw_datasets["validation"], preprocessor, names2labels, training_args.eval_batch_size)
         outputs_data = convert_predictions_to_json(predictions, raw_datasets["validation"])
-        outputs_data.to_json(os.path.join(training_args.output_dir, "predictions.jsonl"))
+        with open(os.path.join(training_args.output_dir, "predictions.jsonl"), "w") as f:
+            for output in outputs_data:
+                f.write(f"{json.dumps(output, ensure_ascii=False)}\n")
 
 def cli_main() -> None:
     data_args, model_args, training_args = parse_args()
