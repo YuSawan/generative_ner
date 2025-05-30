@@ -45,7 +45,7 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                if isinstance(p, tuple):
+                if isinstance(p, tuple) and len(p) == 2:
                     mention, label = p[0], p[1]
                 else:
                     continue
