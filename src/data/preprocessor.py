@@ -131,11 +131,14 @@ class Preprocessor:
                 {"role": "user", "content": f'テキストからカテゴリに関連するすべてのエンティティを見つけてください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nOption: {', '.join([label for label in labels2names.values()])}。\nText: {text}'},
                 {"role": "assistant", "content": output},
             ])
-        else:
+        elif language == 'en':
             messages.extend([
                 {"role": "user", "content": f'Find all the entities associated with the category in the text. The output should be in a list of tuples of the following format: [("entity 1", "type of entity 1"), ... ]\nOption: {', '.join([label for label in labels2names.values()])}.\nText: {text}'},
                 {"role": "assistant", "content": output},
             ])
+        else:
+            raise ValueError(f"Unsupported language: {language}. Supported languages are 'ja' and 'en'.")
+
         return messages
 
     @staticmethod
@@ -162,10 +165,18 @@ class Preprocessor:
             entity_texts = []
             entity_texts = [f'"{entext}"' for enlabel, entext in entities if enlabel == label]
             output = "[" + ', '.join(entity_texts) + "]"
-            messages.extend([
-                {"role": "user", "content": f"What describes {name} in the text?" if language != 'ja' else f"テキストには何の{name}が述べられているでしょうか？"},
-                {"role": "assistant", "content": output},
-            ])
+            if language == 'ja':
+                messages.extend([
+                    {"role": "user", "content": f"テキストには何の{name}が述べられていますか？"},
+                    {"role": "assistant", "content": output},
+                ])
+            elif language == 'en':
+                messages.extend([
+                    {"role": "user", "content": f"What describes {name} in the text?"},
+                    {"role": "assistant", "content": output},
+                ])
+            else:
+                raise ValueError(f"Unsupported language: {language}. Supported languages are 'ja' and 'en'.")
         return messages
 
     @staticmethod
@@ -178,11 +189,13 @@ class Preprocessor:
                 {"role": "user", "content": f'与えられたテキストからすべてのエンティティを抽出し、エンティティタイプを識別してください。 出力は以下の形式のタプルのリストにしてください： [("entity 1", "type of entity 1"), ... ]。\nテキスト: {text}'},
                 {"role": "assistant", "content": output},
             ])
-        else:
+        elif language == 'en':
             messages.extend([
                 {"role": "user", "content": f'Given a passage, your task is to extract all entities and identify their entity types from the text. The output should be in a list of tuples of the following format: [("entity 1", "type of entity 1"), ... ]\nPassage: {text}'},
                 {"role": "assistant", "content": output},
             ])
+        else:
+            raise ValueError(f"Unsupported language: {language}. Supported languages are 'ja' and 'en'.")
         return messages
 
     @staticmethod
