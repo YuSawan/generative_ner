@@ -43,11 +43,10 @@ def convert_text_to_spans(
     if format in ['collective', 'universal']:
         for t, gs, gt, eid in zip(texts, gold_spans, generated_texts, ids):
             ps = []
-            preds = preprocessor.parse_output(gt, format)
+            preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                if ": " not in p:
-                    continue
-                label, mention = p.split(": ")[:2]
+                assert isinstance(p, tuple), f"Expected tuple, got {type(p)}"
+                label, mention = p[0], p[1]
                 try:
                     ps.extend([(s, e, names2labels[label]) for s, e in regex(t.lower(), mention)])
                 except KeyError:
@@ -57,8 +56,9 @@ def convert_text_to_spans(
         assert labels is not None and len(labels) == len(generated_texts)
         for t, gs, gt, lb, eid in zip(texts, gold_spans, generated_texts, labels, ids):
             ps = []
-            preds = preprocessor.parse_output(gt, format)
+            preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
+                assert isinstance(p, str)
                 ps.extend([(s, e, names2labels[lb]) for s, e in regex(t.lower(), p)])
             predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
     else:
@@ -86,26 +86,35 @@ def predict(
         for example in document["examples"]:
             eid = example["id"]
             text = example["text"]
+            entities = example["entities"]
+            messages = preprocessor.get_messages(text, entities)
             if format in ['collective', 'universal']:
                 ids.append(eid)
                 texts.append(text)
-                gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"]])
-                model_inputs.append([messages[:-1] for messages in preprocessor.get_messages([example])][0])
+                gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in entities])
+                model_inputs.append(messages[:-1])
                 if len(texts) == batch_size:
                     generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
                     predictions.extend(convert_text_to_spans(
                         format, ids, texts, gold_spans, generated_texts, preprocessor, names2labels
                     ))
-                    texts, model_inputs, gold_spans = [], [], []
+                    ids, texts, model_inputs, gold_spans = [], [], [], []
 
             elif format == 'individual':
                 labels = []
-                for label, messages in zip(names2labels.values(), preprocessor.get_messages([example])):
+                model_input = messages[:-3] if preprocessor.system_message else messages[:-2]
+                for label, name in names2labels.items():
                     ids.append(eid)
                     texts.append(text)
-                    gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"] if ent["label"] == label])
-                    model_inputs.append(messages[:-1])
                     labels.append(label)
+                    gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"] if ent["label"] == label])
+                    if preprocessor.language == 'ja':
+                        model_input.append({"role": "user", "content": f"テキストには何の{name}が述べられていますか？"})
+                    elif preprocessor.language == 'en':
+                        model_input.append({"role": "user", "content": f"What describes {name} in the text?"})
+                    else:
+                        raise ValueError(f"Unsupported language: {preprocessor.language}")
+                    model_inputs.append(model_input)
                     if len(texts) == batch_size:
                         generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
                         predictions.extend(convert_text_to_spans(
