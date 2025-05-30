@@ -104,19 +104,14 @@ def predict(
 
             elif format == 'individual':
                 labels = []
-                model_input = messages[:-3] if preprocessor.system_message else messages[:-2]
-                for label, name in names2labels.items():
+                model_input = messages[:3] if preprocessor.system_message else messages[:2]
+                label_model_input = messages[3:] if preprocessor.system_message else messages[2:]
+                for i, label in enumerate(names2labels.keys()):
                     ids.append(eid)
                     texts.append(text)
                     labels.append(label)
                     gold_spans.append([(ent["start"], ent["end"], ent["label"]) for ent in example["entities"] if ent["label"] == label])
-                    if preprocessor.language == 'ja':
-                        model_input.append({"role": "user", "content": f"テキストには何の{name}が述べられていますか？"})
-                    elif preprocessor.language == 'en':
-                        model_input.append({"role": "user", "content": f"What describes {name} in the text?"})
-                    else:
-                        raise ValueError(f"Unsupported language: {preprocessor.language}")
-                    model_inputs.append(model_input)
+                    model_inputs.append(model_input + [label_model_input[i*2]])
                     if len(texts) == batch_size:
                         generated_texts = _generate(model_inputs, model, preprocessor, max_new_tokens)
                         predictions.extend(convert_text_to_spans(
