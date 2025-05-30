@@ -105,12 +105,6 @@ class Preprocessor:
         else:
             raise NotImplementedError(f"Unknown chat template format: {tokenizer.chat_template}.")
 
-    @staticmethod
-    def segment(document: list[Example]) -> Iterator[tuple[str, list[tuple[str, str]]]]:
-        for example in document:
-            entities = list(set([(e['label'], example['text'][e["start"]: e["end"]]) for e in example['entities']]))
-            yield example['text'], entities
-
     def get_messages(self, text: str, entities: list[tuple[str, str]]) -> list[dict[str, str]]:
         if self.format == 'collective':
             return self.get_collective_prompt(text, entities, self.labels2names, self.language, self.system_message)
@@ -206,8 +200,9 @@ class Preprocessor:
         return entities
 
     def __call__(self, document: list[Example]) -> Iterator[str]:
-        for text, entities in self.segment(document):
-            messages = self.get_messages(text, entities)
+        for example in document:
+            entities = list(set([(e['label'], example['text'][e["start"]: e["end"]]) for e in example['entities']]))
+            messages = self.get_messages(example["text"], entities)
             yield self.tokenizer.apply_chat_template(messages, return_dict='pt')
 
 
