@@ -45,10 +45,9 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                if isinstance(p, tuple) and len(p) == 2:
-                    mention, label = p[0], p[1]
-                else:
+                if not isinstance(p, tuple) or len(p) != 2:
                     continue
+                mention, label = p[0], p[1]
                 try:
                     ps.extend([(s, e, names2labels[label]) for s, e in regex(t.lower(), mention)])
                 except KeyError:
@@ -60,7 +59,8 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                assert isinstance(p, str)
+                if not isinstance(p, str):
+                    continue
                 ps.extend([(s, e, names2labels[lb]) for s, e in regex(t.lower(), p)])
             predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
     else:
