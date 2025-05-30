@@ -194,8 +194,9 @@ class Preprocessor:
     @staticmethod
     def parse_output(output: str) -> list[tuple[str, str] | str]:
         entities = []
-        for entity in parser(output):
-            entities.append(entity)
+        for line in output.split('\n'):
+            for entity in parser(line):
+                entities.append(entity)
         return entities
 
     def __call__(self, document: list[Example]) -> Iterator[str]:
