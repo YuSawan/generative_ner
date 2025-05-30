@@ -45,8 +45,10 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                assert isinstance(p, tuple), f"Expected tuple, got {type(p)}"
-                label, mention = p[0], p[1]
+                if isinstance(p, tuple):
+                    mention, label = p[0], p[1]
+                else:
+                    continue
                 try:
                     ps.extend([(s, e, names2labels[label]) for s, e in regex(t.lower(), mention)])
                 except KeyError:
