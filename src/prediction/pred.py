@@ -130,7 +130,7 @@ def predict(
     return predictions
 
 
-def convert_predictions_to_json(predictions: list[dict[str, Any]], dataset: Dataset) -> Dataset:
+def convert_predictions_to_json(predictions: list[dict[str, Any]], dataset: Dataset) -> list[dict[str, Any]]:
     results: dict[str, list[dict[str, int|str]]] = {}
     for prediction in predictions:
         try:
@@ -138,11 +138,16 @@ def convert_predictions_to_json(predictions: list[dict[str, Any]], dataset: Data
         except KeyError:
             results[prediction["id"]] = [{"start": s, "end": e, "label": label} for s, e, label in prediction["preds"]]
 
+    jsondata = []
     for data in dataset:
+        result = {"id": data["id"], "examples": []}
         for example in data["examples"]:
-            example["prediction"] = results[example["id"]]
+            data = {k: v for k, v in example.items()}
+            data.update({"predictions": results[example["id"]]})
+            result["examples"].append(data)
+        jsondata.append(result)
 
-    return dataset
+    return jsondata
 
 
 def submit_wandb_predict(predictions: list[dict[str, Any]]) -> None:

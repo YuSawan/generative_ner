@@ -1,4 +1,5 @@
 
+import json
 import os
 
 import torch
@@ -144,7 +145,9 @@ def main(data_args: DatasetArguments, model_args: ModelArguments, training_args:
         names2labels = {v: k for k, v in data_args.labels2names.items()}
         predictions = predict(model, raw_datasets["validation"], preprocessor, names2labels, training_args.eval_batch_size)
         outputs_data = convert_predictions_to_json(predictions, raw_datasets["validation"])
-        outputs_data.to_json(os.path.join(training_args.output_dir, "predictions.jsonl"))
+        with open(os.path.join(training_args.output_dir, "predictions.jsonl"), "w") as f:
+            for output in outputs_data:
+                f.write(f"{json.dumps(output, ensure_ascii=False)}\n")
 
 def cli_main() -> None:
     data_args, model_args, training_args = parse_args()
