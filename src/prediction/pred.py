@@ -45,7 +45,7 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                if not isinstance(p, tuple) or len(p) != 2:
+                if not isinstance(p, tuple) or len(p) != 2 or p[0] == "":
                     continue
                 mention, label = p[0], p[1]
                 try:
@@ -59,7 +59,7 @@ def convert_text_to_spans(
             ps = []
             preds = preprocessor.parse_output(gt)
             for p in sorted(set(preds)):
-                if not isinstance(p, str):
+                if not isinstance(p, str) or p == "":
                     continue
                 ps.extend([(s, e, lb) for s, e in regex(t.lower(), p)])
             predictions.append({"id": eid, "text": t, "golds": gs, "preds": ps, 'generated_text': gt})
